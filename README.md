@@ -1,4 +1,4 @@
-# DllNotificationInection
+# DllNotificationInjection
 
 ![image](https://img.shields.io/badge/C%2B%2B-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white) ![image](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
 
@@ -44,3 +44,4 @@ https://github.com/ShorSec/DllNotificationInjection/assets/54464773/96a72dd9-80d
 - [@NinjaParanoid](https://twitter.com/NinjaParanoid) for his [blog post](https://0xdarkvortex.dev/proxying-dll-loads-for-hiding-etwti-stack-tracing/) on TpWorkCallbacks which were used in this POC.
 - [@onlymalware](https://twitter.com/onlymalware) for his [UnregisterAllLdrRegisterDllNotification POC](https://github.com/rad9800/misc/blob/main/bypasses/UnregisterAllLdrRegisterDllNotification.c), it gave me some inspiration and helped me understand some of the inner workings of the LdrpDllNotificationList.
 - [Sektor7](https://institute.sektor7.net/) for the calc shellcode used in this POC. They are awesome regardless and I highly recommend their courses!
+- [@x86matthew](https://twitter.com/x86matthew) and [@Kharosx0](https://twitter.com/Kharosx0) for their comments ([1](https://twitter.com/x86matthew/status/1691245975455608832?s=20), [2](https://twitter.com/Kharosx0/status/1691313315203764224?s=20)) regarding the GetNtdllBase() function.
