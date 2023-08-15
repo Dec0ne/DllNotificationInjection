@@ -32,7 +32,7 @@ This is a POC. In order for this to be OPSEC safe and evade AV/EDR products, som
 
 
 
-https://github.com/ShorSec/DllNotificationInjection/assets/54464773/94078a42-aba4-44b3-aeab-721eead04018
+https://github.com/ShorSec/DllNotificationInjection/assets/54464773/96a72dd9-80de-4cb8-ac4a-54dddfecf822
 
 
 
